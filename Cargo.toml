@@ -1,0 +1,17 @@
+[package]
+name = "cargo-clean-recursive"
+version = "0.9.0"
+authors = ["Igaguri <igagurimk@gmail.com>"]
+edition = "2018"
+description = "A cargo subcommand cleans all projects under specified directory."
+readme = "README.md"
+repository = "https://github.com/IgaguriMK/cargo-clean-recursive"
+license = "MIT OR Apache-2.0"
+categories = ["development-tools::cargo-plugins"]
+keywords = ["cargo", "cargo-subcommand"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0"
+clap = "2.33"
