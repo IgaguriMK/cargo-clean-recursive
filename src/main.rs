@@ -9,7 +9,7 @@ fn main() {
     if let Err(e) = _main() {
         eprintln!("Error: {}", e);
         for c in e.chain().skip(1) {
-            eprintln!("    <- {}", c);
+            eprintln!("    < {}", c);
         }
         exit(1);
     }
