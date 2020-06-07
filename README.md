@@ -3,6 +3,14 @@ cargo-clean-recursive
 
 A cargo subcommand cleans all projects under specified directory.
 
+## Installation
+
+Get package with Cargo:
+
+```
+cargo install cargo-clean-recursive
+```
+
 ## Usage
 
 To clean all projects under current directory, run this subcommand with no option:
