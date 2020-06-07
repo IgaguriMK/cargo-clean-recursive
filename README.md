@@ -5,10 +5,10 @@ A cargo subcommand cleans all projects under specified directory.
 
 ## Usage
 
-To clean all projects under current directory, run this subcommand with `--all / -r` option:
+To clean all projects under current directory, run this subcommand with no option:
 
 ```
-cargo clean-recursive --all
+cargo clean-recursive
 ```
 
 If you want to clean releace build only, use `--release / -r` option:

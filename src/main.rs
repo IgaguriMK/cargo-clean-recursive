@@ -2,7 +2,7 @@ use std::env::{args, current_dir};
 use std::path::{Path, PathBuf};
 use std::process::{exit, Command};
 
-use anyhow::{Context, Error, Result};
+use anyhow::{Context, Result};
 use clap::{App, Arg};
 
 fn main() {
@@ -23,12 +23,6 @@ fn _main() -> Result<()> {
 
     let matches = App::new("cargo clean-recursive")
         .bin_name("cargo clean-recursive")
-        .arg(
-            Arg::with_name("all")
-                .short("a")
-                .long("all")
-                .help("Deletes all targets"),
-        )
         .arg(
             Arg::with_name("doc")
                 .short("d")
@@ -56,13 +50,9 @@ fn _main() -> Result<()> {
         .get_matches_from(&args);
 
     let delete_mode = DeleteMode {
-        all: matches.is_present("all"),
         doc: matches.is_present("doc"),
         release: matches.is_present("release"),
     };
-    if !delete_mode.has_some_flags() {
-        return Err(Error::msg("No clean targets. Provide at least one target."));
-    }
 
     let depth_str = matches.value_of("depth").expect("'depth' should be exists");
     let depth: usize = depth_str
@@ -141,25 +131,20 @@ fn detect_and_clean(path: &Path, del_mode: DeleteMode) -> Result<()> {
 
 #[derive(Debug, Clone, Copy)]
 struct DeleteMode {
-    all: bool,
     doc: bool,
     release: bool,
 }
 
 impl DeleteMode {
-    fn has_some_flags(self) -> bool {
-        self.all || self.doc || self.release
-    }
-
     fn do_all(self) -> bool {
         !self.release && !self.doc
     }
 
     fn do_doc(self) -> bool {
-        self.doc && !self.all
+        self.doc
     }
 
     fn do_release(self) -> bool {
-        self.release && !self.all
+        self.release
     }
 }
