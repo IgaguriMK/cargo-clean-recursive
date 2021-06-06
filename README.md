@@ -1,11 +1,11 @@
 cargo-clean-recursive
 =======================
 
-A cargo subcommand cleans all projects under specified directory.
+A cargo subcommand cleans all projects under a specified directory.
 
 ## Installation
 
-Get package with Cargo:
+Build binary with Cargo:
 
 ```
 cargo install cargo-clean-recursive
@@ -19,7 +19,7 @@ To clean all projects under current directory, run this subcommand with no optio
 cargo clean-recursive
 ```
 
-If you want to clean releace build only, use `--release / -r` option:
+If you want to clean release build only, use `--release / -r` flag:
 
 ```
 cargo clean-recursive --release
