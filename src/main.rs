@@ -54,7 +54,7 @@ fn _main() -> Result<()> {
         release: matches.is_present("release"),
     };
 
-    let depth_str = matches.value_of("depth").expect("please provide a depth");
+    let depth_str = matches.value_of("depth").expect("'depth' should be exists");
     let depth: usize = depth_str
         .parse()
         .with_context(|| format!("parsing '{}' as number", depth_str))?;
