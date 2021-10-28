@@ -2,6 +2,7 @@ use std::env::{args, current_dir};
 use std::path::{Path, PathBuf};
 
 use async_recursion::async_recursion;
+use futures::stream::{FuturesUnordered, StreamExt};
 use tokio::fs::read_dir;
 use tokio::process::Command;
 
@@ -59,32 +60,37 @@ async fn main() -> Result<()> {
         current_dir().context("getting current_dir")?
     };
 
-    process_dir(Path::new(&path), depth, delete_mode).await?;
+    process_dir(path, depth, delete_mode).await?;
 
     Ok(())
 }
 
 #[async_recursion]
-async fn process_dir(path: &Path, depth: usize, del_mode: DeleteMode) -> Result<()> {
+async fn process_dir(path: PathBuf, depth: usize, del_mode: DeleteMode) -> Result<()> {
     if depth == 0 {
         return Ok(());
     }
 
-    detect_and_clean(path, del_mode)
+    detect_and_clean(&path, del_mode)
         .await
         .with_context(|| format!("cleaning directory {:?}", path))?;
 
-    let mut rd = read_dir(path)
+    let mut rd = read_dir(&path)
         .await
         .with_context(|| format!("reading directory {:?}", path.canonicalize()))?;
+
+    let mut proc_dirs = FuturesUnordered::new();
+
     while let Some(e) = rd.next_entry().await? {
         if e.file_type().await?.is_dir() {
-            if let Err(e) = process_dir(&e.path(), depth - 1, del_mode).await {
-                eprintln!("Warn: {}", e);
-                for c in e.chain().skip(1) {
-                    eprintln!("    at: {}", c);
-                }
-            }
+            let pd = process_dir(e.path(), depth - 1, del_mode);
+            proc_dirs.push(pd);
+        }
+    }
+
+    while let Some(res) = proc_dirs.next().await {
+        if let Err(e) = res {
+            eprintln!("{:#}", e);
         }
     }
 
