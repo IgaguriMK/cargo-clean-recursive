@@ -1,17 +1,19 @@
 [package]
-name = "cargo-clean-recursive"
-version = "0.9.1"
 authors = ["Igaguri <igagurimk@gmail.com>"]
-edition = "2018"
+categories = ["development-tools::cargo-plugins"]
 description = "A cargo subcommand cleans all projects under specified directory."
+edition = "2018"
+keywords = ["cargo", "cargo-subcommand"]
+license = "MIT OR Apache-2.0"
+name = "cargo-clean-recursive"
 readme = "README.md"
 repository = "https://github.com/IgaguriMK/cargo-clean-recursive"
-license = "MIT OR Apache-2.0"
-categories = ["development-tools::cargo-plugins"]
-keywords = ["cargo", "cargo-subcommand"]
+version = "0.9.1"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 anyhow = "1.0"
+async-recursion = "0.3.2"
 clap = "2.33"
+tokio = {version = "1.10.1", features = ["fs", "macros", "process", "rt", "rt-multi-thread", "sync"]}

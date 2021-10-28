@@ -1,21 +1,15 @@
 use std::env::{args, current_dir};
 use std::path::{Path, PathBuf};
-use std::process::{exit, Command};
+
+use async_recursion::async_recursion;
+use tokio::fs::read_dir;
+use tokio::process::Command;
 
 use anyhow::{Context, Result};
 use clap::{App, Arg};
 
-fn main() {
-    if let Err(e) = _main() {
-        eprintln!("Error: {}", e);
-        for c in e.chain().skip(1) {
-            eprintln!("    < {}", c);
-        }
-        exit(1);
-    }
-}
-
-fn _main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let mut args: Vec<String> = args().collect();
     if args.len() >= 2 && &args[1] == "clean-recursive" {
         args.remove(1);
@@ -65,25 +59,27 @@ fn _main() -> Result<()> {
         current_dir().context("getting current_dir")?
     };
 
-    process_dir(Path::new(&path), depth, delete_mode)?;
+    process_dir(Path::new(&path), depth, delete_mode).await?;
 
     Ok(())
 }
 
-fn process_dir(path: &Path, depth: usize, del_mode: DeleteMode) -> Result<()> {
+#[async_recursion]
+async fn process_dir(path: &Path, depth: usize, del_mode: DeleteMode) -> Result<()> {
     if depth == 0 {
         return Ok(());
     }
 
-    detect_and_clean(path, del_mode).with_context(|| format!("cleaning directory {:?}", path))?;
+    detect_and_clean(path, del_mode)
+        .await
+        .with_context(|| format!("cleaning directory {:?}", path))?;
 
-    for e in path
-        .read_dir()
-        .with_context(|| format!("reading directory {:?}", path.canonicalize()))?
-    {
-        let e = e?;
-        if e.file_type()?.is_dir() {
-            if let Err(e) = process_dir(&e.path(), depth - 1, del_mode) {
+    let mut rd = read_dir(path)
+        .await
+        .with_context(|| format!("reading directory {:?}", path.canonicalize()))?;
+    while let Some(e) = rd.next_entry().await? {
+        if e.file_type().await?.is_dir() {
+            if let Err(e) = process_dir(&e.path(), depth - 1, del_mode).await {
                 eprintln!("Warn: {}", e);
                 for c in e.chain().skip(1) {
                     eprintln!("    at: {}", c);
@@ -95,7 +91,7 @@ fn process_dir(path: &Path, depth: usize, del_mode: DeleteMode) -> Result<()> {
     Ok(())
 }
 
-fn detect_and_clean(path: &Path, del_mode: DeleteMode) -> Result<()> {
+async fn detect_and_clean(path: &Path, del_mode: DeleteMode) -> Result<()> {
     if !path.join("Cargo.toml").exists() {
         return Ok(());
     }
@@ -111,19 +107,22 @@ fn detect_and_clean(path: &Path, del_mode: DeleteMode) -> Result<()> {
         Command::new("cargo")
             .args(&["clean"])
             .current_dir(path)
-            .output()?;
+            .output()
+            .await?;
     }
     if del_mode.do_release() {
         Command::new("cargo")
             .args(&["clean", "--release"])
             .current_dir(path)
-            .output()?;
+            .output()
+            .await?;
     }
     if del_mode.do_doc() {
         Command::new("cargo")
             .args(&["clean", "--doc"])
             .current_dir(path)
-            .output()?;
+            .output()
+            .await?;
     }
 
     Ok(())
