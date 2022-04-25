@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::env::{args, current_dir};
 use std::fs::read_dir;
 use std::path::{Path, PathBuf};
@@ -5,6 +6,8 @@ use std::process::{self, Child, Command};
 
 use anyhow::{Context, Result};
 use clap::Parser;
+
+const DEFAULT_SKIP_DIR_NAMES: [&str; 3] = [".git", ".rustup", ".cargo"];
 
 fn main() -> Result<()> {
     let mut args = args();
@@ -27,6 +30,9 @@ struct Args {
     /// Recursive serarch depth limit
     #[clap(long, default_value_t = 64)]
     depth: usize,
+    /// Skip directories with specified names. (if empty, '.git' and '.cargo')
+    #[clap(long)]
+    skips: Option<Vec<String>>,
     /// Target directory
     path: Option<PathBuf>,
 }
@@ -36,6 +42,16 @@ impl Args {
         let delete_mode = DeleteMode {
             doc: self.doc,
             release: self.release,
+        };
+
+        let skips: HashSet<String> = if let Some(ref skips) = self.skips {
+            skips.iter().cloned().collect()
+        } else {
+            let mut skips = HashSet::new();
+            for n in DEFAULT_SKIP_DIR_NAMES {
+                skips.insert(n.to_string());
+            }
+            skips
         };
 
         let depth = self.depth;
@@ -48,7 +64,7 @@ impl Args {
 
         let mut children = Vec::new();
 
-        process_dir(path, depth, delete_mode, &mut children)?;
+        process_dir(path, depth, &skips, delete_mode, &mut children)?;
 
         for mut child in children {
             if let Err(e) = child.wait() {
@@ -63,11 +79,18 @@ impl Args {
 fn process_dir(
     path: PathBuf,
     depth: usize,
+    skips: &HashSet<String>,
     del_mode: DeleteMode,
     children: &mut Vec<Child>,
 ) -> Result<()> {
     if depth == 0 {
         return Ok(());
+    }
+
+    if let Some(Some(dir_name)) = path.file_name().map(|n| n.to_str()) {
+        if skips.contains(dir_name) {
+            return Ok(());
+        }
     }
 
     detect_and_clean(&path, del_mode, children)
@@ -78,7 +101,7 @@ fn process_dir(
     for entry in rd {
         let entry = entry?;
         if entry.file_type()?.is_dir() {
-            if let Err(e) = process_dir(entry.path(), depth - 1, del_mode, children) {
+            if let Err(e) = process_dir(entry.path(), depth - 1, skips, del_mode, children) {
                 eprintln!("{:#}", e);
             }
         }
