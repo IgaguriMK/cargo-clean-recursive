@@ -1,16 +1,12 @@
 use std::env::{args, current_dir};
+use std::fs::read_dir;
 use std::path::{Path, PathBuf};
-
-use async_recursion::async_recursion;
-use futures::stream::{FuturesUnordered, StreamExt};
-use tokio::fs::read_dir;
-use tokio::process::Command;
+use std::process::{self, Child, Command};
 
 use anyhow::{Context, Result};
 use clap::{App, Arg};
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let mut args: Vec<String> = args().collect();
     if args.len() >= 2 && &args[1] == "clean-recursive" {
         args.remove(1);
@@ -60,36 +56,12 @@ async fn main() -> Result<()> {
         current_dir().context("getting current_dir")?
     };
 
-    process_dir(path, depth, delete_mode).await?;
+    let mut children = Vec::new();
 
-    Ok(())
-}
+    process_dir(path, depth, delete_mode, &mut children)?;
 
-#[async_recursion]
-async fn process_dir(path: PathBuf, depth: usize, del_mode: DeleteMode) -> Result<()> {
-    if depth == 0 {
-        return Ok(());
-    }
-
-    detect_and_clean(&path, del_mode)
-        .await
-        .with_context(|| format!("cleaning directory {:?}", path))?;
-
-    let mut rd = read_dir(&path)
-        .await
-        .with_context(|| format!("reading directory {:?}", path.canonicalize()))?;
-
-    let mut proc_dirs = FuturesUnordered::new();
-
-    while let Some(e) = rd.next_entry().await? {
-        if e.file_type().await?.is_dir() {
-            let pd = process_dir(e.path(), depth - 1, del_mode);
-            proc_dirs.push(pd);
-        }
-    }
-
-    while let Some(res) = proc_dirs.next().await {
-        if let Err(e) = res {
+    for mut child in children {
+        if let Err(e) = child.wait() {
             eprintln!("{:#}", e);
         }
     }
@@ -97,41 +69,65 @@ async fn process_dir(path: PathBuf, depth: usize, del_mode: DeleteMode) -> Resul
     Ok(())
 }
 
-async fn detect_and_clean(path: &Path, del_mode: DeleteMode) -> Result<()> {
-    if !path.join("Cargo.toml").exists() {
+fn process_dir(
+    path: PathBuf,
+    depth: usize,
+    del_mode: DeleteMode,
+    children: &mut Vec<Child>,
+) -> Result<()> {
+    if depth == 0 {
         return Ok(());
     }
 
-    let target_dir = path.join("target");
-    if !target_dir.exists() || !target_dir.is_dir() {
+    detect_and_clean(&path, del_mode, children)
+        .with_context(|| format!("cleaning directory {:?}", path))?;
+
+    let rd =
+        read_dir(&path).with_context(|| format!("reading directory {:?}", path.canonicalize()))?;
+
+    for entry in rd {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            if let Err(e) = process_dir(entry.path(), depth - 1, del_mode, children) {
+                eprintln!("{:#}", e);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn detect_and_clean(path: &Path, del_mode: DeleteMode, children: &mut Vec<Child>) -> Result<()> {
+    let should_clean = path.join("Cargo.toml").is_file() && path.join("target").is_dir();
+    if !should_clean {
         return Ok(());
     }
 
     eprintln!("Cleaning {:?}", path);
 
     if del_mode.do_all() {
-        Command::new("cargo")
-            .args(&["clean"])
-            .current_dir(path)
-            .output()
-            .await?;
+        children.push(spawn_cargo_clean(path, &[])?);
     }
     if del_mode.do_release() {
-        Command::new("cargo")
-            .args(&["clean", "--release"])
-            .current_dir(path)
-            .output()
-            .await?;
+        children.push(spawn_cargo_clean(path, &["--release"])?);
     }
     if del_mode.do_doc() {
-        Command::new("cargo")
-            .args(&["clean", "--doc"])
-            .current_dir(path)
-            .output()
-            .await?;
+        children.push(spawn_cargo_clean(path, &["--doc"])?);
     }
 
     Ok(())
+}
+
+fn spawn_cargo_clean(current_dir: &Path, args: &[&str]) -> Result<Child> {
+    Command::new("cargo")
+        .arg("clean")
+        .args(args)
+        .current_dir(current_dir)
+        .stdin(process::Stdio::null())
+        .stdout(process::Stdio::null())
+        .stderr(process::Stdio::null())
+        .spawn()
+        .context("failed to spawn `cargo clean`")
 }
 
 #[derive(Debug, Clone, Copy)]
