@@ -4,69 +4,60 @@ use std::path::{Path, PathBuf};
 use std::process::{self, Child, Command};
 
 use anyhow::{Context, Result};
-use clap::{App, Arg};
+use clap::Parser;
 
 fn main() -> Result<()> {
-    let mut args: Vec<String> = args().collect();
-    if args.len() >= 2 && &args[1] == "clean-recursive" {
-        args.remove(1);
+    let mut args = args();
+    if let Some("clean-recursive") = std::env::args().skip(1).next().as_deref() {
+        args.next();
     }
+    let args = Args::parse_from(args);
+    args.run()
+}
 
-    let matches = App::new("cargo clean-recursive")
-        .bin_name("cargo clean-recursive")
-        .arg(
-            Arg::with_name("doc")
-                .short("d")
-                .long("doc")
-                .help("Deletes documents"),
-        )
-        .arg(
-            Arg::with_name("release")
-                .short("r")
-                .long("release")
-                .help("Deletes release target"),
-        )
-        .arg(
-            Arg::with_name("depth")
-                .long("depth")
-                .default_value("64")
-                .help("Recursive serarch depth limit"),
-        )
-        .arg(
-            Arg::with_name("path")
-                .short("p")
-                .long("path")
-                .help("Target directory"),
-        )
-        .get_matches_from(&args);
+#[derive(Debug, Parser)]
+#[clap(bin_name = "cargo clean-recursive")]
+struct Args {
+    /// Deletes documents
+    #[clap(short, long)]
+    doc: bool,
+    /// Deletes release target
+    #[clap(short, long)]
+    release: bool,
+    /// Recursive serarch depth limit
+    #[clap(long, default_value_t = 64)]
+    depth: usize,
+    /// Target directory
+    path: Option<PathBuf>,
+}
 
-    let delete_mode = DeleteMode {
-        doc: matches.is_present("doc"),
-        release: matches.is_present("release"),
-    };
+impl Args {
+    fn run(&self) -> Result<()> {
+        let delete_mode = DeleteMode {
+            doc: self.doc,
+            release: self.release,
+        };
 
-    let depth_str = matches.value_of("depth").expect("'depth' should be exists");
-    let depth: usize = depth_str
-        .parse()
-        .with_context(|| format!("parsing '{}' as number", depth_str))?;
+        let depth = self.depth;
 
-    let path = if let Some(path) = matches.value_of("path") {
-        PathBuf::from(path)
-    } else {
-        current_dir().context("getting current_dir")?
-    };
+        let path = if let Some(path) = self.path.clone() {
+            path
+        } else {
+            current_dir().context("getting current_dir")?
+        };
 
-    let mut children = Vec::new();
+        let mut children = Vec::new();
 
-    process_dir(path, depth, delete_mode, &mut children)?;
+        process_dir(path, depth, delete_mode, &mut children)?;
 
-    for mut child in children {
-        if let Err(e) = child.wait() {
-            eprintln!("{:#}", e);
+        for mut child in children {
+            if let Err(e) = child.wait() {
+                eprintln!("{:#}", e);
+            }
         }
-    }
 
-    Ok(())
+        Ok(())
+    }
 }
 
 fn process_dir(
