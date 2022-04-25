@@ -88,7 +88,9 @@ fn process_dir(
     for entry in rd {
         let entry = entry?;
         if entry.file_type()?.is_dir() {
-            process_dir(entry.path(), depth - 1, del_mode, children)?;
+            if let Err(e) = process_dir(entry.path(), depth - 1, del_mode, children) {
+                eprintln!("{:#}", e);
+            }
         }
     }
 
