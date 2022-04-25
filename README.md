@@ -33,4 +33,12 @@ cargo clean-recursive --doc
 
 You can specify `--release` and `--doc` at the same time.
 
+```
+cargo clean-recursive --doc --release
+```
 
+You can specify starting directory to recursive search.
+
+```
+cargo clean-recursive ~/my_codes/
+```
