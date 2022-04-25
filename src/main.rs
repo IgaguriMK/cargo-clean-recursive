@@ -88,12 +88,12 @@ fn process_dir(
 }
 
 fn detect_and_clean(path: &Path, del_mode: DeleteMode, children: &mut Vec<Child>) -> Result<()> {
-    let should_clean = path.join("Cargo.toml").is_file() && path.join("target").is_dir();
-    if !should_clean {
+    let is_cargo_dir = path.join("Cargo.toml").is_file();
+    if !is_cargo_dir {
         return Ok(());
     }
 
-    eprintln!("Cleaning {:?}", path);
+    eprintln!("Checking {:?}", path);
 
     if del_mode.do_all() {
         children.push(spawn_cargo_clean(path, &[])?);
