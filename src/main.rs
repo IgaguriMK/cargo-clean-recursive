@@ -80,10 +80,9 @@ fn process_dir(
     }
 
     detect_and_clean(&path, del_mode, children)
-        .with_context(|| format!("cleaning directory {:?}", path))?;
+        .with_context(|| format!("cleaning directory {:?}", path.display()))?;
 
-    let rd =
-        read_dir(&path).with_context(|| format!("reading directory {:?}", path.canonicalize()))?;
+    let rd = read_dir(&path).with_context(|| format!("reading directory {:?}", path.display()))?;
 
     for entry in rd {
         let entry = entry?;
