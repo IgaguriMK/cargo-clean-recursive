@@ -27,7 +27,7 @@ struct Args {
     /// Deletes release target
     #[clap(short, long)]
     release: bool,
-    /// Recursive serarch depth limit
+    /// Recursive search depth limit
     #[clap(long, default_value_t = 64)]
     depth: usize,
     /// Skip directories with specified names. (if empty, '.git' and '.cargo')
