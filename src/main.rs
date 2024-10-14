@@ -3,6 +3,7 @@ use std::env::{args, current_dir};
 use std::fs::read_dir;
 use std::path::{Path, PathBuf};
 use std::process::{self, Child, Command};
+use std::str::FromStr;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -66,12 +67,35 @@ impl Args {
 
         process_dir(path, depth, &skips, delete_mode, &mut children)?;
 
-        for mut child in children {
-            if let Err(e) = child.wait() {
+        let mut sum = bytesize::ByteSize::b(0);
+
+        for child in children {
+            let output = child.wait_with_output();
+
+            if let Err(e) = output {
                 eprintln!("{:#}", e);
+                continue;
+            }
+
+            let output = output.unwrap();
+
+            // cargo clean's output gets piped to stdout for some reason
+            let output = String::from_utf8_lossy(&output.stderr);
+
+            // upon a non-empty cargo clean, we find how much data was removed.
+            // The 3rd item is the data amount (eg 7MiB)
+            let size = output
+                .trim()
+                .split_whitespace()
+                .nth(3)
+                .map(bytesize::ByteSize::from_str);
+
+            if let Some(Ok(size)) = size {
+                sum += size;
             }
         }
 
+        eprintln!("Total space saved: {sum}");
         Ok(())
     }
 }
@@ -138,7 +162,7 @@ fn spawn_cargo_clean(current_dir: &Path, args: &[&str]) -> Result<Child> {
         .current_dir(current_dir)
         .stdin(process::Stdio::null())
         .stdout(process::Stdio::null())
-        .stderr(process::Stdio::null())
+        .stderr(process::Stdio::piped())
         .spawn()
         .context("failed to spawn `cargo clean`")
 }
