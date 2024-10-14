@@ -31,7 +31,7 @@ struct Args {
     /// Recursive search depth limit
     #[clap(long, default_value_t = 64)]
     depth: usize,
-    /// Skip directories with specified names. (if empty, '.git' and '.cargo')
+    /// Skip directories with specified names. (if empty, '.git' '.rustup' '.cargo')
     #[clap(long)]
     skips: Option<Vec<String>>,
     /// Target directory
@@ -69,29 +69,52 @@ impl Args {
 
         let mut sum = bytesize::ByteSize::b(0);
 
+        // Wait for all children to finish and sum up the space saved
         for child in children {
-            let output = child.wait_with_output();
+            match child.wait_with_output() {
+                Ok(output) => {
+                    // We only care if the command was successfully finished.
+                    // Cargo may fail to clean due to various reasons.
+                    //   (eg. too old format version of Cargo.toml, missing permission, etc.)
+                    // We don't care about them.
+                    if output.status.success() {
+                        // cargo clean's output gets piped to stdout for some reason
+                        let output = String::from_utf8_lossy(&output.stderr);
 
-            if let Err(e) = output {
-                eprintln!("{:#}", e);
-                continue;
-            }
+                        let output = output.trim();
 
-            let output = output.unwrap();
+                        // If cargo prints "Removed 0 files", we don't need to parse it.
+                        if output == "Removed 0 files" {
+                            continue;
+                        }
 
-            // cargo clean's output gets piped to stdout for some reason
-            let output = String::from_utf8_lossy(&output.stderr);
+                        // upon a non-empty cargo clean, we find how much data was removed.
+                        // The 3rd item is the data amount (eg 7MiB)
+                        //
+                        // Example cargo's output:
+                        //   Removed 2020 files, 986.5MiB total
+                        let size = output
+                            .split_whitespace()
+                            .nth(3)
+                            .map(bytesize::ByteSize::from_str);
 
-            // upon a non-empty cargo clean, we find how much data was removed.
-            // The 3rd item is the data amount (eg 7MiB)
-            let size = output
-                .trim()
-                .split_whitespace()
-                .nth(3)
-                .map(bytesize::ByteSize::from_str);
-
-            if let Some(Ok(size)) = size {
-                sum += size;
+                        match size {
+                            Some(Ok(size)) => {
+                                sum += size;
+                            }
+                            _ => {
+                                eprintln!("Failed to parse size of cargo clean output: {}", output);
+                            }
+                        }
+                    }
+                }
+                // If we failed to get the output, we just print the error.
+                //
+                // Erors may occur if the child process was started but not finished.
+                // We can't do anything about it.
+                Err(e) => {
+                    eprintln!("Failed to get child process output: {}", e);
+                }
             }
         }
 
