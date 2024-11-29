@@ -5,7 +5,7 @@ A cargo subcommand cleans all projects under a specified directory.
 
 ## Installation
 
-Build binary with Cargo:
+Install binary from crates.io:
 
 ```
 cargo install cargo-clean-recursive
@@ -32,9 +32,17 @@ cargo clean-recursive --doc
 ```
 
 You can specify `--release` and `--doc` at the same time.
+(In this case, debug builds will be cleaned.)
 
 ```
 cargo clean-recursive --doc --release
+```
+
+To see how much capacity will be released, specify the --dry-run / -n option.
+In the case of --dry-run, no actual clean is performed.
+
+```
+cargo clean-recursive --dry-run
 ```
 
 You can specify starting directory to recursive search.

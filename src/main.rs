@@ -30,6 +30,10 @@ struct Args {
     #[clap(short = 'r', long)]
     release: bool,
 
+    /// Display what would be deleted without actually deleting anything
+    #[clap(short = 'n', long)]
+    dry_run: bool,
+
     /// Recursive search depth limit
     #[clap(long, default_value_t = 64)]
     depth: usize,
@@ -47,6 +51,7 @@ impl Args {
         let delete_mode = DeleteMode {
             doc: self.doc,
             release: self.release,
+            dry_run: self.dry_run,
         };
 
         let skips: HashSet<String> = if let Some(ref skips) = self.skips {
@@ -85,11 +90,24 @@ impl Args {
                         // cargo clean's output gets piped to stdout for some reason
                         let output = String::from_utf8_lossy(&output.stderr);
 
+                        // Get the first line of the cargo's output.
                         let output = output.trim();
+                        let output = output
+                            .split_once('\n')
+                            .map(|(first_line, _)| first_line)
+                            .unwrap_or(output);
 
-                        // If cargo prints "Removed 0 files", we don't need to parse it.
-                        if output == "Removed 0 files" {
-                            continue;
+                        // If project is already clean, we don't need to parse size.
+                        if self.dry_run {
+                            // If cargo prints "Summary 0 files", we don't need to parse it.
+                            if output == "Summary 0 files" {
+                                continue;
+                            }
+                        } else {
+                            // If cargo prints "Removed 0 files", we don't need to parse it.
+                            if output == "Removed 0 files" {
+                                continue;
+                            }
                         }
 
                         // upon a non-empty cargo clean, we find how much data was removed.
@@ -122,7 +140,12 @@ impl Args {
             }
         }
 
-        eprintln!("Total space saved: {sum}");
+        if self.dry_run {
+            eprintln!("Total space that will be saved: {sum}");
+        } else {
+            eprintln!("Total space saved: {sum}");
+        }
+
         Ok(())
     }
 }
@@ -176,6 +199,9 @@ fn detect_and_clean(path: &Path, del_mode: DeleteMode, children: &mut Vec<Child>
     }
     if del_mode.do_doc() {
         args.push("--doc");
+    }
+    if del_mode.dry_run {
+        args.push("--dry-run");
     }
 
     children.push(spawn_cargo_clean(path, &args)?);
