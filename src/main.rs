@@ -25,15 +25,19 @@ struct Args {
     /// Deletes documents
     #[clap(short, long)]
     doc: bool,
+
     /// Deletes release target
-    #[clap(short, long)]
+    #[clap(short = 'r', long)]
     release: bool,
+
     /// Recursive search depth limit
     #[clap(long, default_value_t = 64)]
     depth: usize,
-    /// Skip directories with specified names. (if empty, '.git' '.rustup' '.cargo')
+
+    /// Skip scan directories with specified names. (if empty, '.git' '.rustup' '.cargo')
     #[clap(long)]
     skips: Option<Vec<String>>,
+
     /// Target directory
     path: Option<PathBuf>,
 }
