@@ -1,4 +1,16 @@
 
+Version 1.0.0
+------------------------------------
+
+New Features:
+
+* Add dry-run mode.
+* The "Permission Denied" error is no longer displayed by default.
+
+Fixes:
+
+* Added missing `-r` flag. (shorter version of `--release`)
+
 
 Version 0.9.7
 ------------------------------------
