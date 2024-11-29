@@ -1,12 +1,14 @@
 use std::collections::HashSet;
 use std::env::{args, current_dir};
 use std::fs::read_dir;
+use std::io::ErrorKind;
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::process::{self, Child, Command};
 use std::str::FromStr;
 
-use anyhow::{Context, Result};
-use clap::Parser;
+use anyhow::{Context, Error, Result};
+use clap::{Parser, ValueEnum};
 
 const DEFAULT_SKIP_DIR_NAMES: [&str; 3] = [".git", ".rustup", ".cargo"];
 
@@ -41,6 +43,10 @@ struct Args {
     #[clap(long)]
     skips: Option<Vec<String>>,
 
+    /// How to handle IO errors.
+    #[clap(long, default_value = "raise-unexpected")]
+    io_error_handling: IoErrorHandling,
+
     /// Target directory
     path: Option<PathBuf>,
 }
@@ -73,7 +79,14 @@ impl Args {
 
         let mut children = Vec::new();
 
-        process_dir(path, depth, &skips, delete_mode, &mut children)?;
+        process_dir(
+            path,
+            depth,
+            &skips,
+            delete_mode,
+            self.io_error_handling,
+            &mut children,
+        )?;
 
         let mut sum = bytesize::ByteSize::b(0);
 
@@ -154,6 +167,7 @@ fn process_dir(
     depth: usize,
     skips: &HashSet<String>,
     del_mode: DeleteMode,
+    io_error_handling: IoErrorHandling,
     children: &mut Vec<Child>,
 ) -> Result<()> {
     if depth == 0 {
@@ -167,14 +181,34 @@ fn process_dir(
     }
 
     detect_and_clean(&path, del_mode, children)
-        .with_context(|| format!("cleaning directory {:?}", path.display()))?;
+        .with_context(|| format!("cleaning directory {}", path.display()))?;
 
-    let rd = read_dir(&path).with_context(|| format!("reading directory {:?}", path.display()))?;
+    let rd = match read_dir(&path)
+        .handle_io_error(io_error_handling)
+        .with_context(|| format!("reading directory {}", path.display()))?
+    {
+        ControlFlow::Continue(rd) => rd,
+        ControlFlow::Break(()) => return Ok(()),
+    };
 
     for entry in rd {
-        let entry = entry?;
+        let entry = match entry
+            .handle_io_error(io_error_handling)
+            .with_context(|| format!("reading directory entry {}", path.display()))?
+        {
+            ControlFlow::Continue(entry) => entry,
+            ControlFlow::Break(()) => continue,
+        };
+
         if entry.file_type()?.is_dir() {
-            if let Err(e) = process_dir(entry.path(), depth - 1, skips, del_mode, children) {
+            if let Err(e) = process_dir(
+                entry.path(),
+                depth - 1,
+                skips,
+                del_mode,
+                io_error_handling,
+                children,
+            ) {
                 eprintln!("{:#}", e);
             }
         }
@@ -234,5 +268,42 @@ impl DeleteMode {
 
     fn do_release(self) -> bool {
         self.release
+    }
+}
+
+/// How to handle IO errors.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum IoErrorHandling {
+    /// Ignore All IO errors.
+    Ignore,
+
+    /// Show only unexpected IO errors.
+    ///
+    /// For examples, "Permission denied" is an expected error.
+    /// It may occur when the program tries to read a file that
+    /// the user doesn't have permission to read.
+    RaiseUnexpected,
+
+    /// Print all IO errors.
+    RaiseAll,
+}
+
+trait IoErrorHandlingExt<T> {
+    fn handle_io_error(self, handling: IoErrorHandling) -> Result<ControlFlow<(), T>>;
+}
+
+impl<T> IoErrorHandlingExt<T> for std::result::Result<T, std::io::Error> {
+    fn handle_io_error(self, handling: IoErrorHandling) -> Result<ControlFlow<(), T>> {
+        match self {
+            Ok(v) => Ok(ControlFlow::Continue(v)),
+            Err(e) => match handling {
+                IoErrorHandling::Ignore => Ok(ControlFlow::Break(())),
+                IoErrorHandling::RaiseUnexpected => match e.kind() {
+                    ErrorKind::PermissionDenied => Ok(ControlFlow::Break(())),
+                    _ => Err(Error::from(e)),
+                },
+                IoErrorHandling::RaiseAll => Err(Error::from(e)),
+            },
+        }
     }
 }
