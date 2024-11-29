@@ -25,15 +25,23 @@ struct Args {
     /// Deletes documents
     #[clap(short, long)]
     doc: bool,
+
     /// Deletes release target
-    #[clap(short, long)]
+    #[clap(short = 'r', long)]
     release: bool,
+
+    /// Display what would be deleted without actually deleting anything
+    #[clap(short = 'n', long)]
+    dry_run: bool,
+
     /// Recursive search depth limit
     #[clap(long, default_value_t = 64)]
     depth: usize,
-    /// Skip directories with specified names. (if empty, '.git' '.rustup' '.cargo')
+
+    /// Skip scan directories with specified names. (if empty, '.git' '.rustup' '.cargo')
     #[clap(long)]
     skips: Option<Vec<String>>,
+
     /// Target directory
     path: Option<PathBuf>,
 }
@@ -43,6 +51,7 @@ impl Args {
         let delete_mode = DeleteMode {
             doc: self.doc,
             release: self.release,
+            dry_run: self.dry_run,
         };
 
         let skips: HashSet<String> = if let Some(ref skips) = self.skips {
@@ -81,11 +90,24 @@ impl Args {
                         // cargo clean's output gets piped to stdout for some reason
                         let output = String::from_utf8_lossy(&output.stderr);
 
+                        // Get the first line of the cargo's output.
                         let output = output.trim();
+                        let output = output
+                            .split_once('\n')
+                            .map(|(first_line, _)| first_line)
+                            .unwrap_or(output);
 
-                        // If cargo prints "Removed 0 files", we don't need to parse it.
-                        if output == "Removed 0 files" {
-                            continue;
+                        // If project is already clean, we don't need to parse size.
+                        if self.dry_run {
+                            // If cargo prints "Summary 0 files", we don't need to parse it.
+                            if output == "Summary 0 files" {
+                                continue;
+                            }
+                        } else {
+                            // If cargo prints "Removed 0 files", we don't need to parse it.
+                            if output == "Removed 0 files" {
+                                continue;
+                            }
                         }
 
                         // upon a non-empty cargo clean, we find how much data was removed.
@@ -118,7 +140,12 @@ impl Args {
             }
         }
 
-        eprintln!("Total space saved: {sum}");
+        if self.dry_run {
+            eprintln!("Total space that will be saved: {sum}");
+        } else {
+            eprintln!("Total space saved: {sum}");
+        }
+
         Ok(())
     }
 }
@@ -165,15 +192,19 @@ fn detect_and_clean(path: &Path, del_mode: DeleteMode, children: &mut Vec<Child>
 
     eprintln!("Checking {:?}", path);
 
-    if del_mode.do_all() {
-        children.push(spawn_cargo_clean(path, &[])?);
-    }
+    let mut args = Vec::<&'static str>::new();
+
     if del_mode.do_release() {
-        children.push(spawn_cargo_clean(path, &["--release"])?);
+        args.push("--release");
     }
     if del_mode.do_doc() {
-        children.push(spawn_cargo_clean(path, &["--doc"])?);
+        args.push("--doc");
     }
+    if del_mode.dry_run {
+        args.push("--dry-run");
+    }
+
+    children.push(spawn_cargo_clean(path, &args)?);
 
     Ok(())
 }
@@ -194,13 +225,10 @@ fn spawn_cargo_clean(current_dir: &Path, args: &[&str]) -> Result<Child> {
 struct DeleteMode {
     doc: bool,
     release: bool,
+    dry_run: bool,
 }
 
 impl DeleteMode {
-    fn do_all(self) -> bool {
-        !self.release && !self.doc
-    }
-
     fn do_doc(self) -> bool {
         self.doc
     }
