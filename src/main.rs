@@ -20,7 +20,6 @@ fn main() -> Result<()> {
 }
 
 #[derive(Debug, Parser)]
-#[clap(bin_name = "cargo clean-recursive")]
 struct Args {
     /// Deletes documents
     #[clap(short, long)]
