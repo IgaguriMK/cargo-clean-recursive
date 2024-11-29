@@ -169,15 +169,16 @@ fn detect_and_clean(path: &Path, del_mode: DeleteMode, children: &mut Vec<Child>
 
     eprintln!("Checking {:?}", path);
 
-    if del_mode.do_all() {
-        children.push(spawn_cargo_clean(path, &[])?);
-    }
+    let mut args = Vec::<&'static str>::new();
+
     if del_mode.do_release() {
-        children.push(spawn_cargo_clean(path, &["--release"])?);
+        args.push("--release");
     }
     if del_mode.do_doc() {
-        children.push(spawn_cargo_clean(path, &["--doc"])?);
+        args.push("--doc");
     }
+
+    children.push(spawn_cargo_clean(path, &args)?);
 
     Ok(())
 }
@@ -198,13 +199,10 @@ fn spawn_cargo_clean(current_dir: &Path, args: &[&str]) -> Result<Child> {
 struct DeleteMode {
     doc: bool,
     release: bool,
+    dry_run: bool,
 }
 
 impl DeleteMode {
-    fn do_all(self) -> bool {
-        !self.release && !self.doc
-    }
-
     fn do_doc(self) -> bool {
         self.doc
     }
