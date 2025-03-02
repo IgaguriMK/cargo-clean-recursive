@@ -47,6 +47,10 @@ struct Args {
     #[clap(long, default_value = "raise-unexpected")]
     io_error_handling: IoErrorHandling,
 
+    /// Verbose mode
+    #[clap(short = 'v', long)]
+    verbose: bool,
+
     /// Target directory
     path: Option<PathBuf>,
 }
@@ -77,7 +81,7 @@ impl Args {
             current_dir().context("getting current_dir")?
         };
 
-        let mut children = Vec::new();
+        let mut executions = Vec::new();
 
         process_dir(
             path,
@@ -85,13 +89,13 @@ impl Args {
             &skips,
             delete_mode,
             self.io_error_handling,
-            &mut children,
+            &mut executions,
         )?;
 
         let mut sum = bytesize::ByteSize::b(0);
 
         // Wait for all children to finish and sum up the space saved
-        for child in children {
+        for CargoCleanExecution { child, path } in executions {
             match child.wait_with_output() {
                 Ok(output) => {
                     // We only care if the command was successfully finished.
@@ -101,9 +105,14 @@ impl Args {
                     if output.status.success() {
                         // cargo clean's output gets piped to stdout for some reason
                         let output = String::from_utf8_lossy(&output.stderr);
+                        let output = output.trim();
+
+                        // If verbose mode is enabled, print the output.
+                        if self.verbose {
+                            eprintln!("==== {} ====\n{}", path.display(), output);
+                        }
 
                         // Get the first line of the cargo's output.
-                        let output = output.trim();
                         let output = output
                             .split_once('\n')
                             .map(|(first_line, _)| first_line)
@@ -168,7 +177,7 @@ fn process_dir(
     skips: &HashSet<String>,
     del_mode: DeleteMode,
     io_error_handling: IoErrorHandling,
-    children: &mut Vec<Child>,
+    executions: &mut Vec<CargoCleanExecution>,
 ) -> Result<()> {
     if depth == 0 {
         return Ok(());
@@ -180,7 +189,7 @@ fn process_dir(
         }
     }
 
-    detect_and_clean(&path, del_mode, children)
+    detect_and_clean(&path, del_mode, executions)
         .with_context(|| format!("cleaning directory {}", path.display()))?;
 
     let rd = match read_dir(&path)
@@ -207,7 +216,7 @@ fn process_dir(
                 skips,
                 del_mode,
                 io_error_handling,
-                children,
+                executions,
             ) {
                 eprintln!("{:#}", e);
             }
@@ -217,7 +226,11 @@ fn process_dir(
     Ok(())
 }
 
-fn detect_and_clean(path: &Path, del_mode: DeleteMode, children: &mut Vec<Child>) -> Result<()> {
+fn detect_and_clean(
+    path: &Path,
+    del_mode: DeleteMode,
+    executions: &mut Vec<CargoCleanExecution>,
+) -> Result<()> {
     let is_cargo_dir = path.join("Cargo.toml").is_file();
     if !is_cargo_dir {
         return Ok(());
@@ -237,13 +250,13 @@ fn detect_and_clean(path: &Path, del_mode: DeleteMode, children: &mut Vec<Child>
         args.push("--dry-run");
     }
 
-    children.push(spawn_cargo_clean(path, &args)?);
+    executions.push(spawn_cargo_clean(path, &args)?);
 
     Ok(())
 }
 
-fn spawn_cargo_clean(current_dir: &Path, args: &[&str]) -> Result<Child> {
-    Command::new("cargo")
+fn spawn_cargo_clean(current_dir: &Path, args: &[&str]) -> Result<CargoCleanExecution> {
+    let child = Command::new("cargo")
         .arg("clean")
         .args(args)
         .current_dir(current_dir)
@@ -251,7 +264,18 @@ fn spawn_cargo_clean(current_dir: &Path, args: &[&str]) -> Result<Child> {
         .stdout(process::Stdio::null())
         .stderr(process::Stdio::piped())
         .spawn()
-        .context("failed to spawn `cargo clean`")
+        .context("failed to spawn `cargo clean`")?;
+
+    Ok(CargoCleanExecution {
+        child,
+        path: current_dir.to_path_buf(),
+    })
+}
+
+#[derive(Debug)]
+struct CargoCleanExecution {
+    child: Child,
+    path: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy)]
