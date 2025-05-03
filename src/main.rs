@@ -232,7 +232,9 @@ fn detect_and_clean(
     executions: &mut Vec<CargoCleanExecution>,
 ) -> Result<()> {
     let is_cargo_dir = path.join("Cargo.toml").is_file();
-    if !is_cargo_dir {
+    // Don't attempt to clean workspace members, affects --dry-run estimation.
+    let is_standalone = path.join("Cargo.lock").is_file();
+    if !(is_cargo_dir && is_standalone) {
         return Ok(());
     }
 
